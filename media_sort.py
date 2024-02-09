@@ -101,11 +101,30 @@ def get_files(path):
         return []
 
 
-def check_duplicates_in_directory(path, log_file=None):
+def move_duplicate(file_path, log_file=None):
+    dupe_dir = os.path.join(os.path.dirname(file_path), "dupe")
+    os.makedirs(dupe_dir, exist_ok=True)
+    new_path = os.path.join(dupe_dir, os.path.basename(file_path))
+    try:
+        shutil.move(file_path, new_path)
+        log_message(
+            f"Moved duplicate file: {file_path} to {new_path}", log_file)
+    except Exception as e:
+        log_message(f"Error moving file '{file_path}': {e}", log_file)
+
+
+def delete_duplicate(file_path, log_file=None):
+    try:
+        os.remove(file_path)
+        log_message(f"Deleted duplicate file: {file_path}", log_file)
+    except Exception as e:
+        log_message(f"Error deleting file '{file_path}': {e}", log_file)
+
+
+def check_duplicates_in_directory(path, move_dupes=False, delete_dupes=False, log_file=None):
     try:
         all_files = get_files(path)
         checked = set()
-        duplicates = set()
 
         for file_index, file_path in enumerate(all_files):
             if file_path in checked:
@@ -114,8 +133,11 @@ def check_duplicates_in_directory(path, log_file=None):
                 if other_file in checked:
                     continue
                 if are_files_identical(file_path, other_file):
-                    duplicates.add(other_file)
                     checked.add(other_file)
+                    if move_dupes:
+                        move_duplicate(other_file, log_file)
+                    elif delete_dupes:
+                        delete_duplicate(other_file, log_file)
                     log_message(
                         f"Duplicate found: '{other_file}'", log_file)
 
@@ -132,6 +154,10 @@ def parse_arguments():
         '--dest', '-d', help='Destination directory path', default=None)
     parser.add_argument(
         '--dupecheck', '--dupe', '-dupe', nargs='+', help='Filepaths to check for duplicates', default=None)
+    parser.add_argument('--move-dupes', action='store_true',
+                        help='Move duplicate files to a "dupe" directory')
+    parser.add_argument('--delete-dupes', action='store_true',
+                        help='Delete duplicate files')
     parser.add_argument(
         '--log', '-l', help='Log path', default=None)
 
