@@ -48,6 +48,8 @@ def get_oldest_date(file_path):
     modification_time = os.path.getmtime(file_path)
     return min(creation_time, modification_time)
 
+# Only called by sort_files(), which logs the return of copy_file()
+
 
 def copy_file(src, dest, log_file=None):
     try:
@@ -72,7 +74,6 @@ def copy_file(src, dest, log_file=None):
 
 
 def sort_files(src_directory, dest_directory, log_file=None):
-    duplicate_messages = []
     try:
         for root, _, files in os.walk(src_directory):
             for file in files:
@@ -85,9 +86,8 @@ def sort_files(src_directory, dest_directory, log_file=None):
                 os.makedirs(new_dir, exist_ok=True)
                 message = copy_file(
                     file_path, os.path.join(new_dir, file), log_file)
-                duplicate_messages.append(message)
-        for message in duplicate_messages:
-            log_message(message, log_file)
+                log_message(message, log_file)
+
     except Exception as e:
         log_message(
             f"Error accessing directory '{src_directory}': {e}", log_file)
@@ -103,20 +103,20 @@ def get_files(path):
 
 
 def check_duplicates_in_directory(path, log_file=None):
-    all_files = get_files(path)
-    checked = set()
-    duplicates = []
+    try:
+        all_files = get_files(path)
+        checked = set()
 
-    for i, file_path in enumerate(all_files):
-        if file_path in checked:
-            continue
-        for other_file in all_files[i+1:]:
-            if are_files_identical(file_path, other_file):
-                duplicates.append((file_path, other_file))
-                checked.add(other_file)
+        for file_index, file_path in enumerate(all_files):
+            if file_path in checked:
+                continue
+            for other_file in all_files[file_index+1:]:
+                if are_files_identical(file_path, other_file):
+                    log_message(f"{file_path} and {other_file}", log_file)
+                    checked.add(other_file)
 
-    for dup in duplicates:
-        log_message(f"{dup[0]} and {dup[1]}", log_file)
+    except Exception as e:
+        log_message(f"Error accessing path '{path}': {e}", log_file)
 
 
 def parse_arguments():
@@ -127,7 +127,7 @@ def parse_arguments():
     parser.add_argument(
         '--dest', '-d', help='Destination directory path', default=None)
     parser.add_argument(
-        '--dupecheck', '-dupe', nargs='+', help='Filepaths to check for duplicates', default=None)
+        '--dupecheck', '--dupe', '-dupe', nargs='+', help='Filepaths to check for duplicates', default=None)
     parser.add_argument(
         '--log', '-l', help='Log path', default=None)
 
@@ -135,10 +135,13 @@ def parse_arguments():
 
 
 def log_message(message, log_file=None):
-    if not log_file:
-        log_file = 'duplicates_log.txt'  # Default log file name
-    with open(log_file, 'a') as log:
-        log.write(message + '\n')
+    try:
+        if not log_file:
+            log_file = 'duplicates_log.txt'  # Default log file name
+        with open(log_file, 'a') as log:
+            log.write(message + '\n')
+    except Exception as e:
+        print(f"Error writing to log file '{log_file}': {e}")
 
 
 def main():
@@ -155,6 +158,7 @@ def main():
             print("Error: Source and destination directories are required for sorting.")
     except Exception as e:
         print(f"An error occurred: {e}")
+
 
 if __name__ == "__main__":
     main()
