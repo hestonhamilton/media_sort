@@ -10,11 +10,13 @@ import argparse
 
 
 def are_files_identical(file1, file2):
-    # Quick check by comparing file sizes
-    if os.path.getsize(file1) != os.path.getsize(file2):
+    try:
+        if os.path.getsize(file1) != os.path.getsize(file2):
+            return False
+        return filecmp.cmp(file1, file2, shallow=False)
+    except Exception as e:
+        print(f"Error comparing files '{file1}' and '{file2}': {e}")
         return False
-    # Detailed check by comparing file contents
-    return filecmp.cmp(file1, file2, shallow=False)
 
 
 def categorize_file(file_path):
@@ -47,49 +49,61 @@ def get_oldest_date(file_path):
     return min(creation_time, modification_time)
 
 
-def copy_file(src, dest):
-    base, extension = os.path.splitext(dest)
-    counter = 1
-    is_duplicate = False
+def copy_file(src, dest, log_file=None):
+    try:
+        base, extension = os.path.splitext(dest)
+        counter = 1
+        is_duplicate = False
 
-    while os.path.exists(dest):
-        if are_files_identical(src, dest):
-            is_duplicate = True
-            break
-        dest = f"{base}_{counter}{extension}"
-        counter += 1
+        while os.path.exists(dest):
+            if are_files_identical(src, dest):
+                is_duplicate = True
+                break
+            dest = f"{base}_{counter}{extension}"
+            counter += 1
 
-    # If it's a true duplicate, log it and don't copy
-    if is_duplicate:
-        return f"True duplicate: '{src}' not copied to '{dest}'"
-    # If not a duplicate, or a duplicate name but unique content, copy with a new name
-    else:
-        shutil.copy2(src, dest)
-        return f"File copied: '{src}' to '{dest}'"
+        if is_duplicate:
+            return f"True duplicate: '{src}' not copied to '{dest}'"
+        else:
+            shutil.copy2(src, dest)
+            return f"File copied: '{src}' to '{dest}'"
+    except Exception as e:
+        return f"Error copying file '{src}' to '{dest}': {e}"
 
 
 def sort_files(src_directory, dest_directory, log_file=None):
     duplicate_messages = []
-    for root, _, files in os.walk(src_directory):
-        for file in files:
-            file_path = os.path.join(root, file)
-            category = categorize_file(file_path)
-            oldest_time = get_oldest_date(file_path)
-            oldest_date = datetime.fromtimestamp(oldest_time)
-            year_month = oldest_date.strftime("%Y/%m")
-            new_dir = os.path.join(dest_directory, category, year_month)
-            os.makedirs(new_dir, exist_ok=True)
-            message = copy_file(
-                file_path, os.path.join(new_dir, file), log_file)
-            duplicate_messages.append(message)
+    try:
+        for root, _, files in os.walk(src_directory):
+            for file in files:
+                file_path = os.path.join(root, file)
+                category = categorize_file(file_path)
+                oldest_time = get_oldest_date(file_path)
+                oldest_date = datetime.fromtimestamp(oldest_time)
+                year_month = oldest_date.strftime("%Y/%m")
+                new_dir = os.path.join(dest_directory, category, year_month)
+                os.makedirs(new_dir, exist_ok=True)
+                message = copy_file(
+                    file_path, os.path.join(new_dir, file), log_file)
+                duplicate_messages.append(message)
+        for message in duplicate_messages:
+            log_message(message, log_file)
+    except Exception as e:
+        log_message(
+            f"Error accessing directory '{src_directory}': {e}", log_file)
 
-    for message in duplicate_messages:
-        log_message(message, log_file)
+
+def get_files(path):
+    if os.path.isdir(path):
+        return [os.path.join(dp, f) for dp, dn, filenames in os.walk(path) for f in filenames]
+    elif os.path.isfile(path):
+        return [path]
+    else:
+        return []
 
 
-def check_duplicates_in_directory(target_directory):
-    all_files = [os.path.join(dp, f) for dp, dn, filenames in os.walk(
-        target_directory) for f in filenames]
+def check_duplicates_in_directory(path, log_file=None):
+    all_files = get_files(path)
     checked = set()
     duplicates = []
 
@@ -126,18 +140,21 @@ def log_message(message, log_file=None):
     with open(log_file, 'a') as log:
         log.write(message + '\n')
 
+
 def main():
-    args = parse_arguments()
-    log_file = args.log
+    try:
+        args = parse_arguments()
+        log_file = args.log
 
-    if args.dupecheck:
-        for file_path in args.dupecheck:
-            check_duplicates_in_directory(file_path, args.log)
-    elif args.source and args.dest:
-        sort_files(args.source, args.dest, args.log)
-    else:
-        print("Error: Source and destination directories are required for sorting.")
-
+        if args.dupecheck:
+            for file_path in args.dupecheck:
+                check_duplicates_in_directory(file_path, args.log)
+        elif args.source and args.dest:
+            sort_files(args.source, args.dest, args.log)
+        else:
+            print("Error: Source and destination directories are required for sorting.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     main()
