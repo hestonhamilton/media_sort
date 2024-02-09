@@ -9,16 +9,6 @@ import filecmp
 import argparse
 
 
-def are_files_identical(file1, file2):
-    try:
-        if os.path.getsize(file1) != os.path.getsize(file2):
-            return False
-        return filecmp.cmp(file1, file2, shallow=False)
-    except Exception as e:
-        print(f"Error comparing files '{file1}' and '{file2}': {e}")
-        return False
-
-
 def categorize_file(file_path):
     mime_type, _ = mimetypes.guess_type(file_path)
     ext = os.path.splitext(file_path)[1].lower()
@@ -48,9 +38,18 @@ def get_oldest_date(file_path):
     modification_time = os.path.getmtime(file_path)
     return min(creation_time, modification_time)
 
+
+def are_files_identical(file1, file2):
+    try:
+        if os.path.getsize(file1) != os.path.getsize(file2):
+            return False
+        return filecmp.cmp(file1, file2, shallow=False)
+    except Exception as e:
+        log_message(f"Error comparing files '{file1}' and '{file2}': {e}")
+        return False
+
+
 # Only called by sort_files(), which logs the return of copy_file()
-
-
 def copy_file(src, dest, log_file=None):
     try:
         base, extension = os.path.splitext(dest)
@@ -106,14 +105,19 @@ def check_duplicates_in_directory(path, log_file=None):
     try:
         all_files = get_files(path)
         checked = set()
+        duplicates = set()
 
         for file_index, file_path in enumerate(all_files):
             if file_path in checked:
                 continue
             for other_file in all_files[file_index+1:]:
+                if other_file in checked:
+                    continue
                 if are_files_identical(file_path, other_file):
-                    log_message(f"{file_path} and {other_file}", log_file)
+                    duplicates.add(other_file)
                     checked.add(other_file)
+                    log_message(
+                        f"Duplicate found: '{other_file}'", log_file)
 
     except Exception as e:
         log_message(f"Error accessing path '{path}': {e}", log_file)
@@ -137,7 +141,7 @@ def parse_arguments():
 def log_message(message, log_file=None):
     try:
         if not log_file:
-            log_file = 'duplicates_log.txt'  # Default log file name
+            log_file = 'duplicates.log'  # Default log file name
         with open(log_file, 'a') as log:
             log.write(message + '\n')
     except Exception as e:
