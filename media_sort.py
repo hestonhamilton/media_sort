@@ -137,8 +137,9 @@ class MediaSorter:
         :return: List of file paths.
         """
         if os.path.isdir(path):
-            return [os.path.join(dp, f) for dp, dn, filenames in os.walk(path) for f in filenames]
-        elif os.path.isfile(path):
+            return [os.path.join(dp, f) for dp, dn, filenames in os.walk(path) 
+                    for f in filenames if not dp.endswith(os.sep + 'dupe')] # Excludes ${path}/dupe directories previously created by the script.
+        elif os.path.isfile(path) and not os.path.dirname(path).endswith(os.sep + 'dupe'): # Excludes ${path}/dupe directories previously created by the script.
             return [path]
         else:
             return []
@@ -279,7 +280,8 @@ class MediaSorter:
                 self.destination = args.dest
 
             if self.source and self.destination:
-                self.log_message(f"Sorting files from '{self.source}' into '{self.destination}'...")
+                self.log_message(
+                    f"Sorting files from '{self.source}' into '{self.destination}'...")
                 self.sort_files(self.source, self.destination, self.log_file)
             else:
                 print(
