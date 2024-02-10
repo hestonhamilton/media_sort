@@ -283,13 +283,14 @@ class MediaSorter:
                 self.source = args.source
                 self.destination = args.dest
 
-            if self.source and self.destination:
-                self.log_message(
-                    f"Sorting files from '{self.source}' into '{self.destination}'...")
-                self.sort_files(self.source, self.destination, self.log_file)
-            else:
-                print(
-                    "Error: Source and destination directories are required for sorting.")
+                # Check if source and destination directories are provided
+                if self.source and self.destination:
+                    self.log_message(
+                        f"Sorting files from '{self.source}' into '{self.destination}'...")
+                    self.sort_files(self.source, self.destination, self.log_file)
+                else:
+                    print(
+                        "Error: Source and destination directories are required for sorting.")
 
         except Exception as e:
             print(f"An error occurred: {e}")
