@@ -195,7 +195,6 @@ class MediaSorter:
         :param delete_dupes: Boolean indicating whether to delete duplicates.
         :param log_file: Path to the log file.
         """
-        print("move-dupes = " + str(move_dupes))
         try:
             all_files = self.get_files(path)
             checked = set()
