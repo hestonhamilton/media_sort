@@ -137,8 +137,11 @@ class MediaSorter:
         :return: List of file paths.
         """
         if os.path.isdir(path):
-            return [os.path.join(dp, f) for dp, dn, filenames in os.walk(path) 
-                    for f in filenames if not dp.endswith(os.sep + 'dupe')] # Excludes ${path}/dupe directories previously created by the script.
+            self.files = []
+            for dp, dn, filenames in os.walk(path):
+                if not dp.endswith(os.sep + 'dupe'):
+                    self.files.extend([os.path.join(dp, f) for f in filenames])
+            return self.files
         elif os.path.isfile(path) and not os.path.dirname(path).endswith(os.sep + 'dupe'): # Excludes ${path}/dupe directories previously created by the script.
             return [path]
         else:
@@ -248,7 +251,7 @@ class MediaSorter:
 
         return parser.parse_args()
 
-    def log_message(self, message):
+    def log_message(self, message, log_file=None):
         """
         Log a message to a specified log file or to a default log file. Will always have default value 'duplicates.log' set by parse_arguments().
 
@@ -256,6 +259,7 @@ class MediaSorter:
         :param log_file: Path to the log file.
         """
         try:
+            self.log_file = log_file or self.log_file  # Use log_file parameter if provided, otherwise default to self.log_file
             with open(self.log_file, 'a') as log:
                 log.write(message + '\n')
         except Exception as e:
