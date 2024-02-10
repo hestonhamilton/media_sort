@@ -10,6 +10,12 @@ import argparse
 
 
 def categorize_file(file_path):
+    """
+    Determine the category of a file based on its MIME type and extension.
+
+    :param file_path: Path of the file to categorize.
+    :return: The category of the file as a string.
+    """
     mime_type, _ = mimetypes.guess_type(file_path)
     ext = os.path.splitext(file_path)[1].lower()
 
@@ -34,12 +40,25 @@ def categorize_file(file_path):
 
 
 def get_oldest_date(file_path):
+    """
+    Get the oldest date (either creation or modification) of a file.
+
+    :param file_path: Path of the file.
+    :return: The oldest date as a timestamp.
+    """
     creation_time = os.path.getctime(file_path)
     modification_time = os.path.getmtime(file_path)
     return min(creation_time, modification_time)
 
 
 def are_files_identical(file1, file2):
+    """
+    Check if two files are identical by comparing their size and content.
+
+    :param file1: Path to the first file.
+    :param file2: Path to the second file.
+    :return: True if files are identical, False otherwise.
+    """
     try:
         if os.path.getsize(file1) != os.path.getsize(file2):
             return False
@@ -51,6 +70,14 @@ def are_files_identical(file1, file2):
 
 # Only called by sort_files(), which logs the return of copy_file()
 def copy_file(src, dest, log_file=None):
+    """
+    Copy a file from src to dest, handling duplicates by renaming.
+
+    :param src: Source file path.
+    :param dest: Destination file path.
+    :param log_file: Path to the log file.
+    :return: Log message about the copying result.
+    """
     try:
         base, extension = os.path.splitext(dest)
         counter = 1
@@ -73,6 +100,13 @@ def copy_file(src, dest, log_file=None):
 
 
 def sort_files(src_directory, dest_directory, log_file=None):
+    """
+    Sort files from a source directory into categorized subdirectories in the destination.
+
+    :param src_directory: Source directory path.
+    :param dest_directory: Destination directory path.
+    :param log_file: Path to the log file.
+    """
     try:
         for root, _, files in os.walk(src_directory):
             for file in files:
@@ -93,6 +127,12 @@ def sort_files(src_directory, dest_directory, log_file=None):
 
 
 def get_files(path):
+    """
+    Get a list of all files in a directory or a single file if the path is a file.
+
+    :param path: Path to a directory or a file.
+    :return: List of file paths.
+    """
     if os.path.isdir(path):
         return [os.path.join(dp, f) for dp, dn, filenames in os.walk(path) for f in filenames]
     elif os.path.isfile(path):
@@ -102,10 +142,25 @@ def get_files(path):
 
 
 def move_duplicate(file_path, log_file=None):
+    """
+    Move a duplicate file to a 'dupe' subdirectory within its current directory.
+
+    :param file_path: Path of the duplicate file to be moved.
+    :param log_file: Path to the log file.
+    """
     dupe_dir = os.path.join(os.path.dirname(file_path), "dupe")
-    os.makedirs(dupe_dir, exist_ok=True)
-    new_path = os.path.join(dupe_dir, os.path.basename(file_path))
+
+    # Check if the "dupe" directory exists in dest; create it if it doesn't
+    if not os.path.exists(dupe_dir):
+        try:
+            os.makedirs(dupe_dir)
+        except Exception as e:
+            log_message(
+                f"Error creating directory '{dupe_dir}': {e}", log_file)
+            return
+
     try:
+        new_path = os.path.join(dupe_dir, os.path.basename(file_path))
         shutil.move(file_path, new_path)
         log_message(
             f"Moved duplicate file: {file_path} to {new_path}", log_file)
@@ -114,6 +169,11 @@ def move_duplicate(file_path, log_file=None):
 
 
 def delete_duplicate(file_path, log_file=None):
+    """
+    Delete a duplicate file from the filesystem.
+    :param file_path: Path of the duplicate file to be deleted.
+    :param log_file: Path to the log file.
+    """
     try:
         os.remove(file_path)
         log_message(f"Deleted duplicate file: {file_path}", log_file)
@@ -122,6 +182,15 @@ def delete_duplicate(file_path, log_file=None):
 
 
 def check_duplicates_in_directory(path, move_dupes=False, delete_dupes=False, log_file=None):
+    """
+    Check for duplicate files in a directory and optionally move or delete them.
+
+    :param path: Directory path to check for duplicates.
+    :param move_dupes: Boolean indicating whether to move duplicates to 'dupe' directory.
+    :param delete_dupes: Boolean indicating whether to delete duplicates.
+    :param log_file: Path to the log file.
+    """
+    print("move-dupes = " + str(move_dupes))
     try:
         all_files = get_files(path)
         checked = set()
@@ -134,37 +203,55 @@ def check_duplicates_in_directory(path, move_dupes=False, delete_dupes=False, lo
                     continue
                 if are_files_identical(file_path, other_file):
                     checked.add(other_file)
+                    log_message(
+                        f"Duplicate found: '{other_file}'", log_file)
                     if move_dupes:
                         move_duplicate(other_file, log_file)
                     elif delete_dupes:
                         delete_duplicate(other_file, log_file)
-                    log_message(
-                        f"Duplicate found: '{other_file}'", log_file)
 
     except Exception as e:
         log_message(f"Error accessing path '{path}': {e}", log_file)
 
 
 def parse_arguments():
+    """
+    Parse command line arguments.
+
+    :return: Namespace with parsed arguments.
+    """
     parser = argparse.ArgumentParser(
         description='File Sorting and Duplicate Checking Script')
+
+    # Arguments for sorting files
     parser.add_argument(
         '--source', '-s', help='Source directory path', default=None)
     parser.add_argument(
         '--dest', '-d', help='Destination directory path', default=None)
-    parser.add_argument(
-        '--dupecheck', '--dupe', '-dupe', nargs='+', help='Filepaths to check for duplicates', default=None)
-    parser.add_argument('--move-dupes', action='store_true',
-                        help='Move duplicate files to a "dupe" directory')
-    parser.add_argument('--delete-dupes', action='store_true',
-                        help='Delete duplicate files')
-    parser.add_argument(
-        '--log', '-l', help='Log path', default=None)
+
+    # Create subparsers for subcommands
+    subparsers = parser.add_subparsers(dest='command', help='Sub-command help')
+
+    # Subparser for dupecheck
+    dupe_parser = subparsers.add_parser(
+        'dupecheck', help='Check for duplicates')
+    dupe_parser.add_argument(
+        'paths', nargs='+', help='Filepaths to check for duplicates')
+    dupe_parser.add_argument('--move-dupes', action='store_true',
+                             help='Move duplicate files to a "dupe" directory')
+    dupe_parser.add_argument(
+        '--delete-dupes', action='store_true', help='Delete duplicate files')
 
     return parser.parse_args()
 
 
 def log_message(message, log_file=None):
+    """
+    Log a message to a specified log file or to a default log file.
+
+    :param message: Message to log.
+    :param log_file: Path to the log file.
+    """
     try:
         if not log_file:
             log_file = 'duplicates.log'  # Default log file name
@@ -175,15 +262,20 @@ def log_message(message, log_file=None):
 
 
 def main():
+    """
+    Main function, executes the script.
+    """
     try:
         args = parse_arguments()
-        log_file = args.log
+        log_file = args.log if args.log else 'duplicates.log'
 
-        if args.dupecheck:
-            for file_path in args.dupecheck:
-                check_duplicates_in_directory(file_path, args.log)
+        if args.command == 'dupecheck':
+            for file_path in args.paths:
+                check_duplicates_in_directory(
+                    file_path, args.move_dupes, args.delete_dupes, log_file)
+
         elif args.source and args.dest:
-            sort_files(args.source, args.dest, args.log)
+            sort_files(args.source, args.dest, log_file)
         else:
             print("Error: Source and destination directories are required for sorting.")
     except Exception as e:
