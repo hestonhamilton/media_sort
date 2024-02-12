@@ -20,7 +20,6 @@ def main(target_path):
 
             # Navigate up to get the {file_type} directory
             file_type_dir = os.path.abspath(os.path.join(root, "../.."))
-            file_type = os.path.basename(file_type_dir)
 
             # Correctly extract the year and month from the root
             # The month is the basename of the root, and the year is the basename of its parent directory
