@@ -154,9 +154,21 @@ class MediaSorter:
         :param file_path: Path of the duplicate file to be moved.
         :param log_file: Path to the log file.
         """
-        dupe_dir = os.path.join(os.path.dirname(file_path), "dupe")
+        # Extract the file type, year, and month from the existing file path
+        parts = os.path.normpath(file_path).split(os.sep)
+        if len(parts) >= 4:
+            # Assuming structure is .../{file_type}/{year}/{month}/file
+            file_type, year, month = parts[-4], parts[-3], parts[-2]
+            # Construct the new duplicate directory path using the file_path
+            dupe_dir = os.path.join(os.path.dirname(file_path), "..", "..", "duplicates", year, month)
+        else:
+            # Fallback to 'dupe' directory in file_path if path structure is unexpected
+            dupe_dir = os.path.join(os.path.dirname(file_path), "dupe")
 
-        # Check if the "dupe" directory exists in dest; create it if it doesn't
+        # Normalize and resolve the path to remove any '..'
+        dupe_dir = os.path.normpath(os.path.realpath(dupe_dir))
+
+        # Check if the "duplicates" directory exists; create it if it doesn't
         if not os.path.exists(dupe_dir):
             try:
                 os.makedirs(dupe_dir)
