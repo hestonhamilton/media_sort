@@ -77,5 +77,5 @@ The script includes a `MediaSorter` class, which can be configured by modifying 
 Contributions to improve the script are welcome. Please follow the standard fork, branch, and pull request workflow.
 
 ## License
+This project is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License - see the [LICENSE](LICENSE) file for details.
 
-This script is distributed under the [CC BY-NC](LICENSE).
