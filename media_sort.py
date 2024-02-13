@@ -3,7 +3,7 @@
 import os
 import shutil
 from datetime import datetime
-from PIL import Image
+from PIL import Image, ExifTags
 import re
 import mimetypes
 import argparse
@@ -63,14 +63,17 @@ class MediaSorter:
             if not self.similar_filenames(name1, name2):
                 return False
 
-            # For images only, return True if EXIF matches and False if not
-            mime_type1, mime_type2 = mimetypes.guess_type(
-                file1)[0], mimetypes.guess_type(file2)[0]
-            if mime_type1 and mime_type2 and mime_type1.startswith('image') and mime_type2.startswith('image'):
-                exif1, exif2 = self.get_exif_data(
-                    file1), self.get_exif_data(file2)
-                if exif1 and exif2:
-                    return exif1 == exif2
+            # For images only, check specific EXIF tags
+            # Store second return value in "_" since it's not important
+            mime_type1, _ = mimetypes.guess_type(file1)
+            mime_type2, _ = mimetypes.guess_type(file2)
+            if mime_type1.startswith('image') and mime_type2.startswith('image'):
+                exif1, exif2 = self.get_exif_data(file1), self.get_exif_data(file2)
+                # Compare the selected EXIF tags
+                for tag in exif1:
+                    if exif1[tag] != exif2[tag]:
+                        return False
+                return True
 
             # For non-image files or images without EXIF data, check file sizes
             size1, size2 = os.path.getsize(file1), os.path.getsize(file2)
@@ -86,25 +89,29 @@ class MediaSorter:
         Check if two filenames are similar, considering possible renaming or numbering at the end.
         """
         # Regular expression to match renaming patterns such as:
-        # IMG_0001 and IMG_0001_1 or IMG_0001-1 or IMG_0001 (1)
-        # The regex handles optional spaces, dashes, underscores, and parentheses around numbers at the end of filenames.
-        pattern = r'[-_ ]?(\(\d+\)|\d+)?$'
+        # "1-1-07 283.jpg" and "1-1-07 283_1.jpg" and "H1019100.JPG" and "H1019100_2.JPG"
+        # The regex handles any number of spaces, dashes, underscores, and parentheses around numbers at the end of filenames.
+        # It also allows for arbitrary characters preceding the "rename" string.
+        pattern = r'([-_ ]*\d+)?([-_ ]*\(\d+\))?([-_ ]*\d+)?$'
         base_name1 = re.sub(pattern, '', name1)
         base_name2 = re.sub(pattern, '', name2)
         return base_name1 == base_name2
 
-
-
     def get_exif_data(self, filepath):
-        """
-        Extract EXIF data from an image file.
-        """
+        """Extract specific EXIF data from an image file."""
         try:
             with Image.open(filepath) as img:
-                return img._getexif()
-        except IOError:
-            self.log_message(f"Error opening image file '{filepath}'")
-            return None
+                exif_data = img._getexif()
+                if exif_data:
+                    readable_exif = {ExifTags.TAGS.get(k, k): v for k, v in exif_data.items()}
+                    # Selecting specific EXIF tags to focus on
+                    selected_tags = ['DateTimeOriginal', 'Make', 'Model', 'ExposureTime', 'FNumber', 'ISOSpeedRatings']
+                    return {tag: readable_exif.get(tag) for tag in selected_tags}
+                else:
+                    return {}
+        except IOError as e:
+            print(f"Error opening image file '{filepath}': {e}")
+            return {}
 
     # Only called by sort_files(), which logs the return of copy_file()
 
