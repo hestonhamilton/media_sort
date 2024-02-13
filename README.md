@@ -20,7 +20,7 @@ Media Sorter is a Python script designed for organizing and managing media files
 Clone the repository or download the script:
 
 ```bash
-    git clone https://your-repository-url/media_sort.git
+    git clone https://github.com/hestonhamilton/media_sort.git
 ```
 
 Install the required dependencies:
