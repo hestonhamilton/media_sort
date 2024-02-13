@@ -46,17 +46,36 @@ class MediaSorter:
 
     def get_oldest_date(self, file_path):
         """
-        Get the oldest date (either creation or modification) of a file.
+        Get the oldest date (either from EXIF data or file's metadata) of a file.
 
         :param file_path: Path of the file.
         :return: The oldest date as a timestamp.
         """
+
+        category = self.categorize_file(file_path)
+
+        if category == 'images':
+            exif_data = self.get_exif_data(file_path)
+            if 'DateTimeOriginal' in exif_data:
+                try:
+                    exif_date = datetime.strptime(
+                        exif_data['DateTimeOriginal'], '%Y:%m:%d %H:%M:%S')
+                    return exif_date.timestamp()
+                except (ValueError, TypeError) as e:
+                    # Debugging output
+                    self.log_message(f"EXIF date error: {e}")
+
+        # Fallback to using file's metadata
         creation_time = os.path.getctime(file_path)
         modification_time = os.path.getmtime(file_path)
-        return min(creation_time, modification_time)
+        oldest_date = min(creation_time, modification_time)
+        return oldest_date
 
     def are_files_identical(self, file1, file2):
         try:
+            if not (os.path.exists(file1) and os.path.exists(file2)):
+                return False  # One or both files do not exist
+            
             # Not duplicates if filename minus extension aren't similar
             name1, name2 = os.path.splitext(os.path.basename(file1))[
                 0], os.path.splitext(os.path.basename(file2))[0]
@@ -65,10 +84,11 @@ class MediaSorter:
 
             # For images only, check specific EXIF tags
             # Store second return value in "_" since it's not important
-            mime_type1, _ = mimetypes.guess_type(file1)
-            mime_type2, _ = mimetypes.guess_type(file2)
-            if mime_type1.startswith('image') and mime_type2.startswith('image'):
-                exif1, exif2 = self.get_exif_data(file1), self.get_exif_data(file2)
+            category1 = self.categorize_file(file1)
+            category2 = self.categorize_file(file2)
+            if category1 == 'images' and category2 == 'images':
+                exif1, exif2 = self.get_exif_data(
+                    file1), self.get_exif_data(file2)
                 # Compare the selected EXIF tags
                 for tag in exif1:
                     if exif1[tag] != exif2[tag]:
@@ -100,17 +120,19 @@ class MediaSorter:
     def get_exif_data(self, filepath):
         """Extract specific EXIF data from an image file."""
         try:
+            if not os.path.exists(filepath):
+                return {}  # File does not exist
+
             with Image.open(filepath) as img:
                 exif_data = img._getexif()
                 if exif_data:
                     readable_exif = {ExifTags.TAGS.get(k, k): v for k, v in exif_data.items()}
-                    # Selecting specific EXIF tags to focus on
                     selected_tags = ['DateTimeOriginal', 'Make', 'Model', 'ExposureTime', 'FNumber', 'ISOSpeedRatings']
                     return {tag: readable_exif.get(tag) for tag in selected_tags}
                 else:
                     return {}
         except IOError as e:
-            print(f"Error opening image file '{filepath}': {e}")
+            self.log_message(f"Error opening image file '{filepath}': {e}")
             return {}
 
     # Only called by sort_files(), which logs the return of copy_file()
@@ -138,38 +160,50 @@ class MediaSorter:
             return f"Error copying file '{src}' to '{dest}': {e}"
 
     def sort_files(self, src_directory, dest_directory, mode='date', move_dupes=False, delete_dupes=False, log_file=None):
-        processed_files = []  # List to keep track of processed files
+        processed_files = []  # Files processed in this run
+        # Files already in destination
+        existing_files = self.get_files(dest_directory)
 
         try:
-            for root, _, files in os.walk(src_directory):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    category = self.categorize_file(file_path)
+            # Fetch files from the source directory using get_files()
+            source_files = self.get_files(src_directory)
 
-                    # Directory structure based on mode
-                    new_dir = os.path.join(dest_directory, category, datetime.fromtimestamp(self.get_oldest_date(
-                        file_path)).strftime("%Y/%m")) if mode == 'date' else os.path.join(dest_directory, category)
-                    os.makedirs(new_dir, exist_ok=True)
+            for file_path in source_files:
+                category = self.categorize_file(file_path)
 
-                    # Check for duplicates in processed_files
-                    duplicate_file = next((other_file for other_file in processed_files if self.are_files_identical(
-                        file_path, other_file)), None)
-                    if duplicate_file:
-                        if move_dupes:
-                            message = f"Duplicate found, moving: '{file_path}'"
-                            self.move_duplicate(file_path, log_file)
-                        elif delete_dupes:
-                            message = f"Duplicate found, deleting: '{file_path}'"
-                            self.delete_duplicate(file_path, log_file)
-                        else:
-                            message = f"Duplicate found, not copying: '{file_path}'"
+                # Directory structure based on mode
+                new_dir = os.path.join(dest_directory, category, datetime.fromtimestamp(self.get_oldest_date(
+                    file_path)).strftime("%Y/%m")) if mode == 'date' else os.path.join(dest_directory, category)
+                os.makedirs(new_dir, exist_ok=True)
+
+                new_file_path = os.path.join(
+                    new_dir, os.path.basename(file_path))
+                is_duplicate = any(self.are_files_identical(
+                    file_path, other_file) for other_file in processed_files + existing_files)
+
+                if is_duplicate:
+                    if move_dupes:
+                        # Copy the file to the destination before moving it to duplicates
+                        self.copy_file(file_path, new_file_path, log_file)
+                        move_message = f"Duplicate found, moving copied file to 'duplicates': '{new_file_path}'"
+                        self.move_duplicate(
+                            new_file_path, log_file)
+                        self.log_message(move_message, log_file)
+                    elif delete_dupes:
+                        delete_message = f"Duplicate found, deleting source file: '{file_path}'"
+                        self.delete_duplicate(file_path, log_file)
+                        self.log_message(delete_message, log_file)
                     else:
-                        message = self.copy_file(
-                            file_path, os.path.join(new_dir, file), log_file)
-                        # Add to processed files only if not a duplicate
-                        processed_files.append(file_path)
-
-                    self.log_message(message, log_file)
+                        # If not moving or deleting, just log the duplicate without copying
+                        no_copy_message = f"Duplicate found, not copying: '{file_path}'"
+                        self.log_message(no_copy_message, log_file)
+                else:
+                    # If it's not a duplicate, copy the file normally
+                    copy_message = self.copy_file(
+                        file_path, new_file_path, log_file)
+                    # Add the destination file path to processed_files
+                    processed_files.append(new_file_path)
+                    self.log_message(copy_message, log_file)
 
         except Exception as e:
             self.log_message(
@@ -177,21 +211,23 @@ class MediaSorter:
 
     def get_files(self, path):
         """
-        Get a list of all files in a directory or a single file if the path is a file.
+        Get a list of all files in a directory.
 
-        :param path: Path to a directory or a file.
+        :param path: Path to a directory.
         :return: List of file paths.
         """
-        if os.path.isdir(path):
-            self.files = []
-            for dp, filenames in os.walk(path):
-                if not dp.endswith(os.sep + 'dupe'):
-                    self.files.extend([os.path.join(dp, f) for f in filenames])
-            return self.files
-        # Excludes ${path}/dupe directories previously created by the script.
-        elif os.path.isfile(path) and not os.path.dirname(path).endswith(os.sep + 'dupe'):
-            return [path]
-        else:
+        file_list = []
+        try:
+            for root, _, files in os.walk(path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    # Optionally, you could add a check to skip files in specific subdirectories
+                    # if needed, similar to the check for 'dupe' directories in your original code.
+                    file_list.append(file_path)
+            return file_list
+
+        except Exception as e:
+            self.log_message(f"Error accessing path '{path}': {e}")
             return []
 
     def move_duplicate(self, file_path, log_file=None):
@@ -206,16 +242,22 @@ class MediaSorter:
             oldest_date = datetime.fromtimestamp(
                 self.get_oldest_date(file_path))
             year_month = oldest_date.strftime("%Y/%m")
-
             # Construct the new duplicate directory path using the destination directory
             category = self.categorize_file(file_path)
-            dupe_dir = os.path.join(
-                self.destination, "duplicates", category, year_month)
 
-            # Create the directory if it doesn't exist
+            # Split the file path to analyze the directory structure
+            path_parts = os.path.normpath(file_path).split(os.sep)
+            year, month = year_month.split('/')
+
+            # Check if the parent and grandparent directories match year and month
+            if len(path_parts) >= 3 and path_parts[-2] == month and path_parts[-3] == year:
+                dupe_dir = os.path.join(
+                    self.destination, "duplicates", category, year_month)
+            else:
+                dupe_dir = os.path.join(self.destination, "duplicates")
+
+            # Create the directory and move the file
             os.makedirs(dupe_dir, exist_ok=True)
-
-            # Move the file
             new_path = os.path.join(dupe_dir, os.path.basename(file_path))
             shutil.move(file_path, new_path)
             self.log_message(
@@ -237,7 +279,7 @@ class MediaSorter:
             self.log_message(
                 f"Error deleting file '{file_path}': {e}", log_file)
 
-    def check_duplicates_in_directory(self, path, move_dupes=False, delete_dupes=False, log_file=None):
+    def dupe_check(self, path, move_dupes=False, delete_dupes=False, log_file=None):
         """
         Check for duplicate files in a directory and optionally move or delete them.
 
@@ -247,6 +289,7 @@ class MediaSorter:
         :param log_file: Path to the log file.
         """
         try:
+            self.log_message(f"Starting dupecheck of '{path}'...", log_file)
             all_files = self.get_files(path)
             checked = set()
 
@@ -257,16 +300,16 @@ class MediaSorter:
                     if other_file in checked:
                         continue
                     if self.are_files_identical(file_path, other_file):
-                        checked.add(other_file)
                         self.log_message(
                             f"Duplicate found: '{other_file}'", log_file)
+                        checked.add(other_file)
                         if move_dupes:
                             self.move_duplicate(other_file, log_file)
                         elif delete_dupes:
                             self.delete_duplicate(other_file, log_file)
 
         except Exception as e:
-            self.log_message(f"Error accessing path '{path}': {e}", log_file)
+            self.log_message(f"Error during dupecheck: {e}", log_file)
 
     def parse_arguments(self):
         """
@@ -277,21 +320,10 @@ class MediaSorter:
         parser = argparse.ArgumentParser(
             description='File Sorting and Duplicate Checking Script')
 
-        # Arguments for sorting files
-        parser.add_argument(
-            '--source', '-s', help='Source directory path', default=None)
-        parser.add_argument(
-            '--dest', '-d', help='Destination directory path', default=None)
+        # Global arguments
         parser.add_argument(
             '--log', '-l', help='Log file path', default='duplicates.log')
 
-        # Add an argument for sorting mode
-        parser.add_argument('--mode', '-m', choices=['date', 'type'], default='date',
-                            help='Sorting mode: "date" for sorting by date and type, "type" for sorting only by type')
-        parser.add_argument('--move-dupes', action='store_true',
-                            help='Move duplicate files to a "dupe" directory')
-        parser.add_argument('--delete-dupes', action='store_true',
-                            help='Delete duplicate files')
         # Create subparsers for subcommands
         subparsers = parser.add_subparsers(
             dest='command', help='Sub-command help')
@@ -301,6 +333,23 @@ class MediaSorter:
             'dupecheck', help='Check for duplicates')
         dupe_parser.add_argument(
             'paths', nargs='+', help='Filepaths to check for duplicates')
+        dupe_parser.add_argument('--move-dupes', action='store_true',
+                                 help='Move duplicate files to a "dupe" directory')
+        dupe_parser.add_argument(
+            '--delete-dupes', action='store_true', help='Delete duplicate files')
+
+        # Subparser for copy
+        copy_parser = subparsers.add_parser('copy', help='Copy files')
+        copy_parser.add_argument(
+            '--source', '-s', help='Source directory path')
+        copy_parser.add_argument(
+            '--dest', '-d', help='Destination directory path')
+        copy_parser.add_argument('--mode', '-m', choices=['date', 'type'], default='date',
+                                 help='Sorting mode: "date" for sorting by date and type, "type" for sorting only by type')
+        copy_parser.add_argument('--move-dupes', action='store_true',
+                                 help='Move duplicate files to a "dupe" directory')
+        copy_parser.add_argument(
+            '--delete-dupes', action='store_true', help='Delete duplicate files')
 
         return parser.parse_args()
 
@@ -331,9 +380,13 @@ class MediaSorter:
 
             if args.command == 'dupecheck':
                 for file_path in args.paths:
-                    self.log_message(f"Starting dupecheck of '{file_path}'...")
-                    self.check_duplicates_in_directory(
-                        file_path, self.move_dupes, self.delete_dupes, self.log_file)
+                    self.destination = file_path
+                    self.log_message(
+                        f"Dupecheck on: {file_path}, Move Dupes: {self.move_dupes}, Delete Dupes: {self.delete_dupes}")
+                    self.dupe_check(file_path, self.move_dupes,
+                                    self.delete_dupes, self.log_file)
+                    self.log_message(
+                        f"Dupecheck on: {file_path} complete!")
             else:
                 # Set the source and destination from the parsed arguments
                 self.source = args.source
