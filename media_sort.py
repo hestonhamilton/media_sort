@@ -75,7 +75,7 @@ class MediaSorter:
         try:
             if not (os.path.exists(file1) and os.path.exists(file2)):
                 return False  # One or both files do not exist
-            
+
             # Not duplicates if filename minus extension aren't similar
             name1, name2 = os.path.splitext(os.path.basename(file1))[
                 0], os.path.splitext(os.path.basename(file2))[0]
@@ -124,86 +124,18 @@ class MediaSorter:
                 return {}  # File does not exist
 
             with Image.open(filepath) as img:
-                exif_data = img._getexif()
+                exif_data = img.getexif()
                 if exif_data:
-                    readable_exif = {ExifTags.TAGS.get(k, k): v for k, v in exif_data.items()}
-                    selected_tags = ['DateTimeOriginal', 'Make', 'Model', 'ExposureTime', 'FNumber', 'ISOSpeedRatings']
+                    readable_exif = {ExifTags.TAGS.get(
+                        k, k): v for k, v in exif_data.items()}
+                    selected_tags = ['DateTimeOriginal', 'Make', 'Model',
+                                     'ExposureTime', 'FNumber', 'ISOSpeedRatings']
                     return {tag: readable_exif.get(tag) for tag in selected_tags}
                 else:
                     return {}
         except IOError as e:
             self.log_message(f"Error opening image file '{filepath}': {e}")
             return {}
-
-    # Only called by sort_files(), which logs the return of copy_file()
-
-    def copy_file(self, src, dest, log_file=None):
-        """
-        Copy a file from src to dest.
-
-        :param src: Source file path.
-        :param dest: Destination file path.
-        :param log_file: Path to the log file.
-        :return: Log message about the copying result.
-        """
-        try:
-            # Check if a file with the same name exists in the destination and rename if necessary
-            base, extension = os.path.splitext(dest)
-            counter = 1
-            while os.path.exists(dest):
-                dest = f"{base}_{counter}{extension}"
-                counter += 1
-
-            shutil.copy2(src, dest)
-            return f"File copied: '{src}' to '{dest}'"
-        except Exception as e:
-            return f"Error copying file '{src}' to '{dest}': {e}"
-
-    def sort_files(self, src_directory, dest_directory, mode='date', move_dupes=False, delete_dupes=False, log_file=None):
-        processed_files = []  # Files processed in this run
-        # Files already in destination
-        existing_files = self.get_files(dest_directory)
-
-        try:
-            # Fetch files from the source directory using get_files()
-            source_files = self.get_files(src_directory)
-
-            for file_path in source_files:
-                category = self.categorize_file(file_path)
-
-                # Directory structure based on mode
-                new_dir = os.path.join(dest_directory, category, datetime.fromtimestamp(self.get_oldest_date(
-                    file_path)).strftime("%Y/%m")) if mode == 'date' else os.path.join(dest_directory, category)
-                os.makedirs(new_dir, exist_ok=True)
-
-                new_file_path = os.path.join(
-                    new_dir, os.path.basename(file_path))
-                is_duplicate = any(self.are_files_identical(
-                    file_path, other_file) for other_file in processed_files + existing_files)
-
-                if is_duplicate:
-                    if move_dupes:
-                        # Copy the file to the destination before moving it to duplicates
-                        self.copy_file(file_path, new_file_path, log_file)
-                        self.move_duplicate(
-                            new_file_path, log_file)
-                    elif delete_dupes:
-                        self.delete_duplicate(file_path, log_file)
-                    else:
-                        # If not moving or deleting, just log the duplicate without copying
-                        no_copy_message = f"Duplicate found, not copying: '{file_path}'"
-                        self.log_message(no_copy_message, log_file)
-                else:
-                    # If it's not a duplicate, copy the file normally
-                    copy_message = self.copy_file(
-                        file_path, new_file_path, log_file)
-                    # Add the destination file path to processed_files
-                    processed_files.append(new_file_path)
-                    self.log_message(copy_message, log_file)
-
-        except Exception as e:
-            self.log_message(
-                f"Error accessing directory '{src_directory}': {e}", log_file)
 
     def get_files(self, path):
         """
@@ -306,6 +238,76 @@ class MediaSorter:
 
         except Exception as e:
             self.log_message(f"Error during dupecheck: {e}", log_file)
+
+    # Only called by sort_files(), which logs the return of copy_file()
+
+    def copy_file(self, src, dest, log_file=None):
+        """
+        Copy a file from src to dest.
+
+        :param src: Source file path.
+        :param dest: Destination file path.
+        :param log_file: Path to the log file.
+        :return: Log message about the copying result.
+        """
+        try:
+            # Check if a file with the same name exists in the destination and rename if necessary
+            base, extension = os.path.splitext(dest)
+            counter = 1
+            while os.path.exists(dest):
+                dest = f"{base}_{counter}{extension}"
+                counter += 1
+
+            shutil.copy2(src, dest)
+            return f"File copied: '{src}' to '{dest}'"
+        except Exception as e:
+            return f"Error copying file '{src}' to '{dest}': {e}"
+
+    def sort_files(self, src_directory, dest_directory, mode='date', move_dupes=False, delete_dupes=False, log_file=None):
+        processed_files = []  # Files processed in this run
+        # Files already in destination
+        existing_files = self.get_files(dest_directory)
+
+        try:
+            # Fetch files from the source directory using get_files()
+            source_files = self.get_files(src_directory)
+
+            for file_path in source_files:
+                category = self.categorize_file(file_path)
+
+                # Directory structure based on mode
+                new_dir = os.path.join(dest_directory, category, datetime.fromtimestamp(self.get_oldest_date(
+                    file_path)).strftime("%Y/%m")) if mode == 'date' else os.path.join(dest_directory, category)
+                os.makedirs(new_dir, exist_ok=True)
+
+                new_file_path = os.path.join(
+                    new_dir, os.path.basename(file_path))
+                is_duplicate = any(self.are_files_identical(
+                    file_path, other_file) for other_file in processed_files + existing_files)
+
+                if is_duplicate:
+                    if move_dupes:
+                        # Copy the file to the destination before moving it to duplicates
+                        self.copy_file(file_path, new_file_path, log_file)
+                        self.move_duplicate(
+                            new_file_path, log_file)
+                    elif delete_dupes:
+                        self.delete_duplicate(file_path, log_file)
+                    else:
+                        # If not moving or deleting, just log the duplicate without copying
+                        no_copy_message = f"Duplicate found, not copying: '{file_path}'"
+                        self.log_message(no_copy_message, log_file)
+                else:
+                    # If it's not a duplicate, copy the file normally
+                    copy_message = self.copy_file(
+                        file_path, new_file_path, log_file)
+                    # Add the destination file path to processed_files
+                    processed_files.append(new_file_path)
+                    self.log_message(copy_message, log_file)
+
+        except Exception as e:
+            self.log_message(
+                f"Error accessing directory '{src_directory}': {e}", log_file)
 
     def parse_arguments(self):
         """
