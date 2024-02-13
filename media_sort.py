@@ -185,14 +185,10 @@ class MediaSorter:
                     if move_dupes:
                         # Copy the file to the destination before moving it to duplicates
                         self.copy_file(file_path, new_file_path, log_file)
-                        move_message = f"Duplicate found, moving copied file to 'duplicates': '{new_file_path}'"
                         self.move_duplicate(
                             new_file_path, log_file)
-                        self.log_message(move_message, log_file)
                     elif delete_dupes:
-                        delete_message = f"Duplicate found, deleting source file: '{file_path}'"
                         self.delete_duplicate(file_path, log_file)
-                        self.log_message(delete_message, log_file)
                     else:
                         # If not moving or deleting, just log the duplicate without copying
                         no_copy_message = f"Duplicate found, not copying: '{file_path}'"
@@ -344,8 +340,8 @@ class MediaSorter:
             '--source', '-s', help='Source directory path')
         copy_parser.add_argument(
             '--dest', '-d', help='Destination directory path')
-        copy_parser.add_argument('--mode', '-m', choices=['date', 'type'], default='date',
-                                 help='Sorting mode: "date" for sorting by date and type, "type" for sorting only by type')
+        copy_parser.add_argument('--mode', '-m', choices=['date', 'category'], default='date',
+                                 help='Sorting mode: "date" for sorting by date and type, "category" for sorting only by type')
         copy_parser.add_argument('--move-dupes', action='store_true',
                                  help='Move duplicate files to a "dupe" directory')
         copy_parser.add_argument(
